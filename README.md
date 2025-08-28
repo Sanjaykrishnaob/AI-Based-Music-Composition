@@ -128,17 +128,8 @@ DEVICE = "cpu"  # Change to "cuda" if GPU available
 - [ ] Collaborative mood analysis
 - [ ] Mobile app version
 
-## 📝 License
-This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📞 Support
-For issues and questions:
-- Create an issue on GitHub
-- Check the troubleshooting section above
-- Review the documentation
 
 ---
-*Built with ❤️ using Streamlit and AI*
+
+
