@@ -12,7 +12,7 @@ Symphony Muse is a modern, AI-powered music composition tool that analyzes human
 - **🎨 Modern UI/UX**: Clean, responsive design with custom CSS styling
 - **📈 Analytics Dashboard**: Track popular moods and generation trends
 
-## 🚀 New Features (v2.0)
+## 🚀Features
 - **Real-time Audio Preview**: Generate and play music based on your mood
 - **Enhanced Visualizations**: Interactive charts for mood analysis and parameters
 - **Analytics Section**: View trends and statistics
@@ -115,10 +115,6 @@ DEVICE = "cpu"  # Change to "cuda" if GPU available
 2. **Audio playback issues**: Check browser audio permissions
 3. **Slow performance**: Consider using GPU by changing DEVICE to "cuda" in config.py
 
-### Performance Tips
-- Models are cached after first load
-- Audio files are automatically cleaned up
-- Use energy level slider for faster generation
 
 ## 🚀 Future Enhancements
 - [ ] Real-time microphone input for mood detection
@@ -131,5 +127,6 @@ DEVICE = "cpu"  # Change to "cuda" if GPU available
 
 
 ---
+
 
 
