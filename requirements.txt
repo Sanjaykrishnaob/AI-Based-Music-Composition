@@ -6,6 +6,10 @@ transformers>=4.35.0
 torch>=2.1.0
 sentence-transformers>=2.2.2
 
+# Firebase Authentication and Database
+firebase-admin>=6.2.0
+pyrebase4>=4.6.0
+
 # Audio Processing & Music Generation
 audiocraft>=1.0.0
 pydub>=0.25.1

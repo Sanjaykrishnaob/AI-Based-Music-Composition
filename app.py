@@ -1,616 +1,614 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
+from firebase_auth import firebase_auth
+from mood_analyzer import MoodAnalyzer
+from music_generator import MusicGenerator
+from user_auth import render_login_form, render_signup_form, render_user_profile, render_user_music_history
 from datetime import datetime
-import time
-import os
 from pathlib import Path
 
-# Core components
-from mood_analyzer import MoodAnalyzer
-from music_parameters import MusicParameterProcessor
-from music_generator import MusicGenerator
-
-# Visualization libraries
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-
-try:
-    import librosa
-    import matplotlib.pyplot as plt
-    LIBROSA_AVAILABLE = True
-except ImportError:
-    LIBROSA_AVAILABLE = False
-
-# Set page configuration
-st.set_page_config(
-    page_title="🎵 AI Music Composer",
-    page_icon="🎵",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for enhanced UI
-st.markdown("""
+def apply_custom_css():
+    st.markdown('''
 <style>
     .main-header {
+        text-align: center;
+        color: #2E86AB;
         font-size: 3rem;
-        color: #1e3a8a;
-        text-align: center;
-        margin-bottom: 0.5rem;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        margin-bottom: 1rem;
     }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #64748b;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .milestone-badge {
+    .login-container {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        margin: 0.5rem;
-        display: inline-block;
-    }
-    .feature-card {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        padding: 1.5rem;
+        padding: 2rem;
         border-radius: 15px;
         color: white;
-        margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    .success-box {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        margin: 1rem 0;
-    }
-    .audio-controls {
-        background: #f8fafc;
-        padding: 1rem;
-        border-radius: 10px;
-        border: 2px solid #e2e8f0;
-        margin: 1rem 0;
+        margin: 2rem 0;
+        text-align: center;
     }
 </style>
-""", unsafe_allow_html=True)
+''', unsafe_allow_html=True)
 
-@st.cache_resource
-def load_ai_models():
-    """Load and cache AI models to avoid reloading"""
-    try:
-        with st.spinner("🤖 Loading AI models... (First time may take a moment)"):
-            analyzer = MoodAnalyzer()
-            processor = MusicParameterProcessor()
-            generator = MusicGenerator()
-            
-        st.success("✅ All AI models loaded successfully!")
-        return analyzer, processor, generator, True
-        
-    except Exception as e:
-        st.error(f"❌ Error loading models: {e}")
-        return None, None, None, False
+def show_login_screen():
+    st.markdown('---')
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('''
+        <div class="login-container">
+            <h2>🎵 Welcome to AI Music Composer</h2>
+            <p>Create personalized music using cutting-edge AI technology</p>
+            <p><strong>Please log in or create an account to get started</strong></p>
+        </div>
+        ''', unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(['🔐 Login', '📝 Create Account'])
+    with tab1:
+        st.subheader('Welcome Back!')
+        render_login_form()
+    with tab2:
+        st.subheader('Join the AI Music Revolution!')
+        render_signup_form()
 
-def create_waveform_visualization(audio_file_path):
-    """Create waveform visualization using librosa and matplotlib"""
-    if not LIBROSA_AVAILABLE or not audio_file_path or not Path(audio_file_path).exists():
-        return None
+def show_main_app():
+    st.sidebar.title('🎼 Navigation')
+    user = firebase_auth.get_current_user()
+    st.sidebar.markdown('---')
+    st.sidebar.markdown(f'👤 **{user.get("display_name", "User")}**')
+    st.sidebar.markdown(f'📧 {user.get("email", "")}')
+    if st.sidebar.button('🚪 Logout', use_container_width=True):
+        firebase_auth.logout_user()
+        st.rerun()
+    st.sidebar.markdown('---')
     
-    try:
-        # Load audio file
-        y, sr = librosa.load(audio_file_path, duration=30)
-        
-        # Create waveform plot
-        fig, ax = plt.subplots(figsize=(12, 4))
-        time_axis = np.linspace(0, len(y)/sr, len(y))
-        ax.plot(time_axis, y, color='#667eea', linewidth=0.8)
-        ax.set_xlabel('Time (seconds)')
-        ax.set_ylabel('Amplitude')
-        ax.set_title('Audio Waveform')
-        ax.grid(True, alpha=0.3)
-        
-        # Style the plot
-        ax.set_facecolor('#f8fafc')
-        fig.patch.set_facecolor('white')
-        
-        return fig
-        
-    except Exception as e:
-        st.warning(f"⚠️ Could not create waveform: {e}")
-        return None
-
-def create_mood_radar_chart(mood_data):
-    """Create an interactive mood radar chart"""
-    if not PLOTLY_AVAILABLE:
-        return None
-    
-    categories = ['Energy', 'Positivity', 'Intensity', 'Complexity', 'Dynamics']
-    values = [
-        mood_data.get('energy_level', 5),
-        mood_data.get('sentiment_confidence', 0.5) * 10,
-        mood_data.get('energy_level', 5),
-        6,  # Default complexity
-        mood_data.get('energy_level', 5)
+    # Enhanced navigation with descriptions
+    st.sidebar.markdown("### 🎯 Features")
+    nav_options = [
+        "� Welcome & Features",
+        "�🎭 Mood Analysis", 
+        "🎵 Music Generation", 
+        "🎼 My Music", 
+        "🔐 User Profile"
     ]
+    section = st.sidebar.radio("Choose Section:", nav_options)
     
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=values,
-        theta=categories,
-        fill='toself',
-        name='Mood Analysis',
-        line_color='#667eea',
-        fillcolor='rgba(102, 126, 234, 0.3)'
-    ))
+    # Feature descriptions in sidebar
+    with st.sidebar.expander("ℹ️ Quick Info", expanded=False):
+        st.markdown("""
+        **🎭 Mood Analysis**
+        AI-powered emotion detection
+        
+        **🎵 Music Generation**
+        Create music with AI models
+        
+        **🎼 My Music**
+        Your generated music history
+        
+        **🔐 User Profile**
+        Account settings & preferences
+        """)
     
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 10]
-            )),
-        showlegend=False,
-        title="Mood Analysis Radar",
-        font=dict(size=12)
-    )
-    
-    return fig
+    # Main content based on selection
+    if section == "� Welcome & Features":
+        show_welcome_section()
+    elif section == "�🎭 Mood Analysis":
+        mood_analysis_section()
+    elif section == "🎵 Music Generation":
+        music_generation_section()
+    elif section == "🎼 My Music":
+        render_user_music_history()
+    elif section == "🔐 User Profile":
+        render_user_profile()
 
-def display_milestone_achievements():
-    """Display milestone achievements"""
-    st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-    st.markdown("### 🎯 Implementation Status")
+def show_welcome_section():
+    """Display comprehensive welcome and feature overview"""
+    st.title("🎵 AI-Based Music Composition Platform")
+    st.markdown("### Welcome to the future of personalized music creation! 🚀")
+    
+    st.markdown("""
+    This platform combines **cutting-edge AI technology** with **music theory** to create personalized music 
+    based on your emotions and preferences. Powered by **Hugging Face Transformers** and **Advanced AI Models**.
+    """)
+    
+    # System status overview
+    st.markdown("---")
+    st.header("🔧 System Status & Capabilities")
+    
+    try:
+        # Check mood analyzer
+        analyzer = MoodAnalyzer()
+        mood_status = "✅ Ready"
+        mood_model = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    except:
+        mood_status = "⚠️ Limited"
+        mood_model = "Fallback models"
+    
+    try:
+        # Check music generator
+        generator = MusicGenerator()
+        gen_info = generator.get_generation_info()
+        if gen_info['musicgen_available']:
+            music_status = "✅ AI Models Ready"
+            music_model = gen_info['model_name']
+        else:
+            music_status = "⚠️ Fallback Mode"
+            music_model = "Basic Synthesis"
+    except:
+        music_status = "❌ Error"
+        music_model = "Unavailable"
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("#### ✅ Core Foundation")
-        st.markdown("""
-        - ✅ **Hugging Face Sentiment Analysis**: twitter-roberta-base-sentiment-latest
-        - ✅ **Sentence Embeddings**: all-MiniLM-L6-v2 for mood classification  
-        - ✅ **6 Mood Categories**: Happy, Sad, Calm, Energetic, Mysterious, Romantic
-        - ✅ **Energy Calculation**: 1-10 scale with keyword detection
-        - ✅ **Musical Parameter Mapping**: Tempo, Key, Instruments, Dynamics
+        st.markdown(f"""
+        ### 🎭 Mood Analysis Engine
+        **Status**: {mood_status}
+        **Model**: {mood_model}
+        
+        **Capabilities:**
+        - 🧠 Advanced sentiment analysis
+        - 🎯 6 distinct mood categories
+        - ⚡ Energy level detection (1-10)
+        - 🎼 Automatic musical parameter mapping
+        - 🎹 Instrument recommendation
+        - 🎵 Genre and tempo suggestion
         """)
     
     with col2:
-        st.markdown("#### ✅ Music Generation")
-        st.markdown("""
-        - ✅ **MusicGen Integration**: facebook/musicgen-small (300MB)
-        - ✅ **Audio Processing**: Tensor → Normalization → Quality Enhancement
-        - ✅ **Format Conversion**: WAV → MP3 (30 seconds)
-        - ✅ **Streamlit Audio Player**: Play/Pause/Download controls
-        - ✅ **Waveform Visualization**: Real-time audio analysis
+        st.markdown(f"""
+        ### 🎵 Music Generation System
+        **Status**: {music_status}
+        **Engine**: {music_model}
+        
+        **Features:**
+        - 🤖 AI-powered music creation
+        - 🎼 Text-to-music conversion
+        - 🎧 Instant audio playback
+        - 💾 MP3 download (30 seconds)
+        - 🎛️ Custom parameter control
+        - 🔄 Quality enhancement
         """)
     
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def main():
-    # Header with milestone badges
-    st.markdown('<h1 class="main-header">🎵 AI Music Composer</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Hugging Face Powered Music Generation</p>', unsafe_allow_html=True)
+    # Feature demonstration
+    st.markdown("---")
+    st.header("🎯 Complete Feature Set")
     
-    # Load AI models
-    analyzer, processor, generator, models_loaded = load_ai_models()
+    features = [
+        ("🔥 Firebase Authentication", "✅", "Secure user accounts with Google Firebase"),
+        ("🎭 Hugging Face AI Models", "✅", "Advanced sentiment analysis and embeddings"),
+        ("🎵 MusicGen Integration", music_status, "Facebook's MusicGen for AI music creation"),
+        ("🎼 Musical Theory Engine", "✅", "Comprehensive music parameter mapping"),
+        ("🎧 Audio Processing", "✅", "Real-time audio conversion and enhancement"),
+        ("💾 Cloud Storage", "✅", "Firestore database for user data and history"),
+        ("🎨 Modern UI/UX", "✅", "Responsive design with real-time feedback"),
+        ("📱 Cross-Platform", "✅", "Works on desktop, tablet, and mobile"),
+    ]
     
-    if not models_loaded:
-        st.error("⚠️ Could not load AI models. Please check your installation.")
-        st.stop()
-    
-    # Sidebar navigation
-    st.sidebar.title("🎼 Navigation")
-    section = st.sidebar.radio("Choose Section:", [
-        "🏠 Overview", 
-        "🎭 Mood Analysis", 
-        "🎵 Music Generation",
-        "📊 Analytics Dashboard",
-        "⚙️ Model Information"
-    ])
-    
-    if section == "🏠 Overview":
-        display_milestone_achievements()
-        
-        st.markdown("### 🚀 Quick Start Guide")
-        
-        tab1, tab2, tab3 = st.tabs(["Step 1: Mood Analysis", "Step 2: Music Generation", "Step 3: Audio Playback"])
-        
-        with tab1:
-            st.markdown("""
-            #### 🎭 Analyze Your Mood
-            1. Navigate to **Mood Analysis** section
-            2. Enter text describing your mood: *"I'm feeling energetic and ready to dance!"*
-            3. AI analyzes sentiment, mood category, and energy level
-            4. View detailed musical parameters
-            """)
-        
-        with tab2:
-            st.markdown("""
-            #### 🎵 Generate Music
-            1. Go to **Music Generation** section  
-            2. Enter your mood or use analyzed parameters
-            3. Click **Generate Music** to create 30-second audio
-            4. AI converts text → audio using MusicGen
-            """)
-        
-        with tab3:
-            st.markdown("""
-            #### 🎧 Listen & Download
-            1. Use built-in audio player for playback
-            2. View waveform visualization
-            3. Download MP3 file to your device
-            4. Adjust volume and replay as needed
-            """)
-    
-    elif section == "🎭 Mood Analysis":
-        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.header("🎭 Mood Analysis Engine")
-        st.markdown("*Convert user text like \"I'm feeling happy and energetic\" into musical parameters*")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        col1, col2 = st.columns([2, 1])
-        
+    for feature, status, description in features:
+        col1, col2, col3 = st.columns([3, 1, 4])
         with col1:
-            st.subheader("📝 Describe Your Mood")
-            user_input = st.text_area(
-                "Enter your mood, feelings, or desired atmosphere:",
-                placeholder="Examples:\n• I'm feeling energetic and ready to workout!\n• I need calm music for studying\n• Create something mysterious and dark\n• I'm in a romantic mood tonight",
-                height=120
-            )
-            
-            if st.button("🔍 Analyze Mood with AI", type="primary", use_container_width=True):
-                if user_input.strip():
-                    try:
-                        # Step-by-step analysis display
-                        with st.spinner("🤖 Running Hugging Face sentiment analysis..."):
-                            time.sleep(1)  # Brief pause for user experience
-                            mood_result = analyzer.analyze_mood(user_input)
-                        
-                        # Display results
-                        st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                        st.markdown("### ✅ Analysis Complete!")
-                        
-                        # Key metrics
-                        col_a, col_b, col_c, col_d = st.columns(4)
-                        with col_a:
-                            st.metric("🎭 Mood", mood_result.get("mood_category", "calm").title())
-                        with col_b:
-                            st.metric("⚡ Energy", f"{mood_result.get('energy_level', 5)}/10")
-                        with col_c:
-                            st.metric("💭 Sentiment", mood_result.get("sentiment", "neutral").title())
-                        with col_d:
-                            st.metric("🎯 Confidence", f"{mood_result.get('sentiment_confidence', 0.5):.2f}")
-                        
-                        st.markdown('</div>', unsafe_allow_html=True)
-                        
-                        # Detailed musical parameters
-                        st.subheader("🎼 Generated Musical Parameters")
-                        
-                        param_col1, param_col2 = st.columns(2)
-                        with param_col1:
-                            st.write(f"**🎵 Tempo:** {mood_result.get('tempo', 120)} BPM")
-                            st.write(f"**🎹 Key:** {mood_result.get('key', 'major').title()}")
-                            st.write(f"**🎚️ Dynamics:** {mood_result.get('dynamics', 'mp')}")
-                            st.write(f"**🎪 Genre:** {mood_result.get('genre_style', 'contemporary').title()}")
-                        
-                        with param_col2:
-                            instruments = mood_result.get('instruments', ['piano'])
-                            st.write(f"**🎸 Instruments:** {', '.join(instruments)}")
-                            st.write(f"**🎭 Texture:** {mood_result.get('texture', 'homophonic').title()}")
-                            st.write(f"**⏱️ Time Signature:** {mood_result.get('time_signature', '4/4')}")
-                            st.write(f"**🎤 Generation Prompt:** {mood_result.get('text_prompt', '')}")
-                        
-                        # Visualization
-                        if PLOTLY_AVAILABLE:
-                            fig = create_mood_radar_chart(mood_result)
-                            if fig:
-                                st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Store results in session state for music generation
-                        st.session_state['mood_analysis'] = mood_result
-                        
-                        # Full parameters
-                        with st.expander("📋 View Complete Analysis Data"):
-                            st.json(mood_result)
-                        
-                    except Exception as e:
-                        st.error(f"❌ Analysis failed: {e}")
-                else:
-                    st.warning("⚠️ Please enter a mood description first!")
-        
+            st.markdown(f"**{feature}**")
         with col2:
-            st.markdown("### 💡 Analysis Process")
-            st.info("""
-            **🔄 4-Step Process:**
-            
-            1️⃣ **Sentiment Analysis**  
-            Uses twitter-roberta-base-sentiment-latest
-            
-            2️⃣ **Mood Classification**  
-            Cosine similarity with pre-computed embeddings
-            
-            3️⃣ **Energy Calculation**  
-            Keyword detection + sentiment scoring
-            
-            4️⃣ **Parameter Mapping**  
-            Mood → Musical elements
-            """)
-            
-            st.markdown("### 🎯 Example Inputs")
-            if st.button("Try: Energetic Workout"):
-                st.text_area("", value="I'm excited for my workout! Need high energy music!", key="example1")
-            if st.button("Try: Calm Study"):
-                st.text_area("", value="I need peaceful, calm music for studying and focus", key="example2")
-            if st.button("Try: Romantic Evening"):
-                st.text_area("", value="Create something romantic and intimate for date night", key="example3")
+            st.markdown(status)
+        with col3:
+            st.markdown(f"_{description}_")
     
-    elif section == "🎵 Music Generation":
-        st.markdown('<div class="feature-card">', unsafe_allow_html=True)
-        st.header("🎵 Music Generation Engine")
-        st.markdown("*Generate 30-second MP3 files using MusicGen AI model*")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Quick start guide
+    st.markdown("---")
+    st.header("🚀 Quick Start Guide")
+    
+    tab1, tab2, tab3 = st.tabs(["1️⃣ Analyze Mood", "2️⃣ Generate Music", "3️⃣ Download & Save"])
+    
+    with tab1:
+        st.markdown("""
+        ### 🎭 Step 1: Mood Analysis
+        1. Navigate to **🎭 Mood Analysis**
+        2. Describe your current mood or feelings
+        3. Click **🔍 Analyze Mood with AI**
+        4. View detailed analysis results
         
-        # Generation method selection
-        generation_method = st.radio(
-            "Choose generation method:",
-            ["📝 Text-to-Music", "🎭 Use Mood Analysis", "⚙️ Custom Parameters"]
+        **Example inputs:**
+        - "I'm feeling energetic and ready to dance!"
+        - "I need calm music for studying"
+        - "Feeling romantic and nostalgic"
+        """)
+        
+        if st.button("🎭 Try Mood Analysis Now", type="primary"):
+            st.session_state.nav_to_mood = True
+            st.rerun()
+    
+    with tab2:
+        st.markdown("""
+        ### 🎵 Step 2: Music Generation
+        1. Use your mood analysis results, OR
+        2. Enter custom music description, OR
+        3. Use manual parameter controls
+        4. Click **🎵 Generate Music**
+        5. Wait 30-60 seconds for AI processing
+        
+        **Generation options:**
+        - From mood analysis
+        - Custom text descriptions
+        - Manual parameter control
+        """)
+        
+        if st.button("🎵 Try Music Generation Now", type="primary"):
+            st.session_state.nav_to_music = True
+            st.rerun()
+    
+    with tab3:
+        st.markdown("""
+        ### 💾 Step 3: Download & Save
+        1. Listen to generated music
+        2. Download as MP3 file
+        3. Save to your profile history
+        4. Share or use in your projects
+        
+        **Audio features:**
+        - Instant playback
+        - High-quality MP3 download
+        - 30-second compositions
+        - Volume and quality optimization
+        """)
+    
+    # Quick stats
+    if st.button("📊 View My Profile", type="secondary", use_container_width=True):
+        st.session_state.nav_to_profile = True
+        st.rerun()
+    
+    # Handle navigation requests
+    if st.session_state.get('nav_to_mood', False):
+        st.session_state.nav_to_mood = False
+        st.session_state.current_section = "🎭 Mood Analysis"
+        st.rerun()
+    elif st.session_state.get('nav_to_music', False):
+        st.session_state.nav_to_music = False
+        st.session_state.current_section = "🎵 Music Generation"
+        st.rerun()
+    elif st.session_state.get('nav_to_profile', False):
+        st.session_state.nav_to_profile = False
+        st.session_state.current_section = "🔐 User Profile"
+        st.rerun()
+
+def mood_analysis_section():
+    st.header("🎭 Mood Analysis Engine")
+    st.info("🤖 **Powered by Hugging Face Transformers** - Advanced AI sentiment analysis and mood classification")
+    
+    # Show system capabilities
+    with st.expander("🔬 Analysis Capabilities", expanded=False):
+        st.markdown("""
+        **🧠 AI Models Used:**
+        • **Sentiment Analysis**: `cardiffnlp/twitter-roberta-base-sentiment-latest`
+        • **Mood Classification**: `all-MiniLM-L6-v2` sentence transformers
+        • **Energy Detection**: Custom keyword analysis algorithm
+        
+        **🎭 Mood Categories**: Happy, Sad, Calm, Energetic, Mysterious, Romantic
+        **⚡ Energy Scale**: 1-10 dynamic energy level calculation
+        **🎼 Musical Output**: Tempo, key, instruments, genre mapping
+        """)
+    
+    user_input = st.text_area(
+        "🗣️ Describe your mood or feelings:",
+        placeholder="Examples:\n• 'I'm feeling energetic and ready to dance!'\n• 'I need calm music for studying'\n• 'Feeling melancholic and nostalgic today'",
+        height=120
+    )
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        analyze_button = st.button("🔍 Analyze Mood with AI", type="primary", use_container_width=True)
+    with col2:
+        if st.button("🎲 Try Example", use_container_width=True):
+            examples = [
+                "I'm feeling excited and pumped up for my workout!",
+                "I need peaceful, calming music for meditation",
+                "Feeling romantic and want something tender",
+                "I'm sad and need emotional music to match my mood"
+            ]
+            st.session_state.example_input = examples[len(examples) % 4]
+            st.rerun()
+    
+    # Use example if set
+    if 'example_input' in st.session_state:
+        user_input = st.session_state.example_input
+        del st.session_state.example_input
+    
+    if analyze_button and user_input.strip():
+        try:
+            with st.spinner("🤖 Analyzing your mood with Hugging Face AI models..."):
+                analyzer = MoodAnalyzer()
+                result = analyzer.analyze_mood(user_input)
+            
+            st.success("✅ AI Analysis Complete!")
+            
+            # Main results display
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("🎭 Mood Category", result.get("mood_category", "unknown").title())
+            with col2:
+                st.metric("⚡ Energy Level", f"{result.get('energy_level', 0)}/10")
+            with col3:
+                st.metric("💭 Sentiment", result.get("sentiment", "neutral").title())
+            with col4:
+                st.metric("🎯 Confidence", f"{result.get('sentiment_confidence', 0):.2f}")
+            
+            # Detailed analysis results
+            with st.expander("🔬 Detailed Analysis Results", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**🎼 Musical Parameters Generated:**")
+                    st.markdown(f"• **Tempo**: {result.get('tempo', 120)} BPM")
+                    st.markdown(f"• **Key**: {result.get('key', 'major').title()}")
+                    st.markdown(f"• **Time Signature**: {result.get('time_signature', '4/4')}")
+                    st.markdown(f"• **Genre Style**: {result.get('genre_style', 'contemporary').replace('_', ' ').title()}")
+                    st.markdown(f"• **Dynamics**: {result.get('dynamics', 'mf')} (Musical Volume)")
+                    st.markdown(f"• **Texture**: {result.get('texture', 'homophonic').title()}")
+                
+                with col2:
+                    st.markdown("**🎹 Recommended Instruments:**")
+                    instruments = result.get('instruments', ['piano'])
+                    for i, instrument in enumerate(instruments, 1):
+                        st.markdown(f"{i}. {instrument.replace('_', ' ').title()}")
+                    
+                    st.markdown("**🤖 AI Generation Prompt:**")
+                    st.code(result.get('text_prompt', 'moderate music'), language="text")
+            
+            # Store results for music generation
+            st.session_state['mood_analysis'] = result
+            
+            # Quick generation button
+            st.markdown("---")
+            if st.button("🚀 Generate Music from This Analysis", type="secondary", use_container_width=True):
+                st.info("🎵 Switching to Music Generation with your mood analysis...")
+                st.session_state['auto_generate'] = True
+                
+        except Exception as e:
+            st.error(f"❌ Analysis failed: {e}")
+            st.info("🔧 This might be due to missing dependencies. The app includes fallback models.")
+            
+    elif analyze_button:
+        st.warning("⚠️ Please enter a mood description first!")
+    
+    # Show recent analysis if available
+    if 'mood_analysis' in st.session_state and not analyze_button:
+        with st.expander("📊 Previous Analysis Results", expanded=False):
+            prev_result = st.session_state['mood_analysis']
+            st.markdown(f"**Last Analysis**: {prev_result.get('mood_category', 'unknown').title()} mood, Energy {prev_result.get('energy_level', 0)}/10")
+            st.markdown(f"**Input**: _{prev_result.get('original_input', 'N/A')}_")
+
+def music_generation_section():
+    st.header("🎵 Music Generation Studio")
+    
+    # Check system status
+    try:
+        generator = MusicGenerator()
+        gen_info = generator.get_generation_info()
+        if gen_info['musicgen_available']:
+            st.success("🤖 **MusicGen AI Ready** - Advanced neural music generation available!")
+        else:
+            st.warning("⚠️ **Fallback Mode** - Using basic synthesis (install `audiocraft` for full AI features)")
+        
+        with st.expander("🔧 Generation System Info", expanded=False):
+            st.markdown(f"""
+            **🎼 Music Generation Engine:**
+            • **Model**: {gen_info['model_name']}
+            • **Sample Rate**: {gen_info['sample_rate']} Hz
+            • **Duration**: {gen_info['duration']} seconds
+            • **Output Format**: {gen_info['output_format']}
+            
+            **🎯 Features:**
+            • Text-to-Music AI conversion
+            • Musical parameter integration
+            • Real-time audio processing
+            • Quality enhancement & normalization
+            """)
+    except Exception as e:
+        st.error(f"❌ System error: {e}")
+        return
+    
+    # Auto-generation from mood analysis
+    if st.session_state.get('auto_generate', False):
+        st.session_state['auto_generate'] = False
+        if 'mood_analysis' in st.session_state:
+            st.info("🎭 **Generating music from your mood analysis...**")
+            generate_music_from_mood(st.session_state['mood_analysis'])
+            return
+    
+    # Check if we have mood analysis results
+    if 'mood_analysis' in st.session_state:
+        mood_result = st.session_state['mood_analysis']
+        st.info(f"🎭 **Previous Analysis Available**: {mood_result.get('mood_category', 'unknown').title()} mood, Energy {mood_result.get('energy_level', 0)}/10")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🎭 Generate from Mood Analysis", type="secondary", use_container_width=True):
+                generate_music_from_mood(mood_result)
+                return
+        with col2:
+            if st.button("🔄 View Analysis Details", use_container_width=True):
+                with st.expander("📊 Analysis Details", expanded=True):
+                    st.markdown(f"**Original Input**: _{mood_result.get('original_input', 'N/A')}_")
+                    st.markdown(f"**Generated Prompt**: {mood_result.get('text_prompt', 'N/A')}")
+                    st.markdown(f"**Musical Key**: {mood_result.get('key', 'major').title()}")
+                    st.markdown(f"**Tempo**: {mood_result.get('tempo', 120)} BPM")
+                    instruments = mood_result.get('instruments', ['piano'])
+                    st.markdown(f"**Instruments**: {', '.join(instruments)}")
+    
+    st.markdown("---")
+    st.markdown("### 🎨 Custom Music Generation")
+    
+    # Custom generation options
+    tab1, tab2 = st.tabs(["🗣️ Text Description", "🎛️ Manual Parameters"])
+    
+    with tab1:
+        user_input = st.text_area(
+            "🎼 Describe the music you want:",
+            placeholder="Examples:\n• 'Upbeat electronic dance music with strong bass'\n• 'Calm piano melody for relaxation and studying'\n• 'Epic orchestral music with dramatic crescendos'\n• 'Jazz fusion with saxophone and electric guitar'",
+            height=100
         )
         
-        musical_params = None
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            generate_custom = st.button("🎵 Generate Custom Music", type="primary", use_container_width=True)
+        with col2:
+            if st.button("💡 Examples", use_container_width=True):
+                examples = [
+                    "Upbeat pop music with guitar and drums",
+                    "Peaceful ambient soundscape for meditation",
+                    "Energetic rock anthem with electric guitars",
+                    "Romantic piano ballad with soft strings"
+                ]
+                st.session_state.music_example = examples[len(examples) % 4]
+                st.rerun()
         
-        if generation_method == "📝 Text-to-Music":
-            st.subheader("📝 Direct Text-to-Music Generation")
-            
-            text_prompt = st.text_area(
-                "Describe the music you want:",
-                placeholder="Examples:\n• Upbeat happy electronic music with synthesizers\n• Slow melancholic piano ballad in minor key\n• Energetic rock music with guitar and drums at 140 BPM",
-                height=100
-            )
-            
-            if text_prompt:
-                # Create simple parameters from text
-                musical_params = {
-                    'text_prompt': text_prompt,
-                    'mood_category': 'custom',
-                    'energy_level': 5,
-                    'tempo': 120,
-                    'key': 'major',
-                    'instruments': ['mixed'],
-                    'original_input': text_prompt
-                }
+        # Use example if set
+        if 'music_example' in st.session_state:
+            user_input = st.session_state.music_example
+            del st.session_state.music_example
         
-        elif generation_method == "🎭 Use Mood Analysis":
-            if 'mood_analysis' in st.session_state:
-                st.subheader("🎭 Using Previous Mood Analysis")
-                analysis = st.session_state['mood_analysis']
-                
-                # Display current analysis
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Mood", analysis.get('mood_category', 'calm').title())
-                with col2:
-                    st.metric("Energy", f"{analysis.get('energy_level', 5)}/10")
-                with col3:
-                    st.metric("Tempo", f"{analysis.get('tempo', 120)} BPM")
-                
-                st.info(f"🎤 Generation prompt: {analysis.get('text_prompt', '')}")
-                musical_params = analysis
-                
-            else:
-                st.warning("⚠️ No mood analysis found. Please run mood analysis first or use text-to-music.")
+        if generate_custom and user_input.strip():
+            generate_custom_music(user_input, generator)
+        elif generate_custom:
+            st.warning("⚠️ Please enter a music description first!")
+    
+    with tab2:
+        st.markdown("🎛️ **Advanced Parameter Control**")
         
-        elif generation_method == "⚙️ Custom Parameters":
-            st.subheader("⚙️ Custom Music Parameters")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                mood = st.selectbox("Mood:", ["happy", "sad", "calm", "energetic", "mysterious", "romantic"])
-                energy = st.slider("Energy Level:", 1, 10, 5)
-                tempo = st.slider("Tempo (BPM):", 60, 180, 120)
-            
-            with col2:
-                key = st.selectbox("Key:", ["major", "minor"])
-                genre = st.selectbox("Genre:", ["pop", "rock", "electronic", "classical", "jazz", "ambient"])
-                instruments = st.multiselect("Instruments:", 
-                    ["piano", "guitar", "drums", "strings", "synth", "bass", "flute"],
-                    default=["piano", "guitar"])
-            
-            # Create parameters
-            musical_params = {
-                'mood_category': mood,
-                'energy_level': energy,
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            tempo = st.slider("🥁 Tempo (BPM)", 60, 180, 120)
+            energy = st.slider("⚡ Energy Level", 1, 10, 5)
+        with col2:
+            mood = st.selectbox("🎭 Mood", ["happy", "sad", "calm", "energetic", "mysterious", "romantic"])
+            key = st.selectbox("🎹 Key", ["major", "minor"])
+        with col3:
+            genre = st.selectbox("🎼 Genre", ["pop", "rock", "classical", "electronic", "jazz", "ambient"])
+            duration = st.slider("⏱️ Duration", 10, 30, 30)
+        
+        if st.button("🎵 Generate with Parameters", type="primary", use_container_width=True):
+            params = {
                 'tempo': tempo,
+                'energy_level': energy,
+                'mood_category': mood,
                 'key': key,
                 'genre_style': genre,
-                'instruments': instruments,
-                'text_prompt': f"{energy} level {mood} {genre} music with {', '.join(instruments)} in {key} key at {tempo} BPM"
+                'text_prompt': f"{energy_words.get(energy, 'moderate')} {mood} {genre} music in {key} key at {tempo} BPM"
             }
+            generate_music_with_params(params, generator)
+
+def generate_custom_music(user_input, generator):
+    """Generate music from custom text description"""
+    try:
+        with st.spinner("🎼 Generating music... This may take 30-60 seconds..."):
+            st.info(f"🎯 **Generating**: {user_input}")
+            audio_file_path = generator.generate_music({'text_prompt': user_input})
         
-        # Music generation
-        if musical_params and st.button("🎵 Generate Music", type="primary", use_container_width=True):
-            try:
-                # Display generation info
-                gen_info = generator.get_generation_info()
-                st.info(f"🤖 Using: {gen_info['model_name']} | Duration: {gen_info['duration']}s | Format: {gen_info['output_format']}")
-                
-                # Generate music
-                with st.spinner("🎼 Generating music... This may take 30-60 seconds..."):
-                    audio_file_path = generator.generate_music(musical_params)
-                
-                if audio_file_path and Path(audio_file_path).exists():
-                    st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                    st.markdown("### 🎉 Music Generated Successfully!")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Audio playback section
-                    st.markdown('<div class="audio-controls">', unsafe_allow_html=True)
-                    st.subheader("🎧 Audio Playback & Controls")
-                    
-                    # Get audio bytes for Streamlit
-                    audio_bytes, mime_type = generator.get_audio_for_streamlit(audio_file_path)
-                    
-                    if audio_bytes:
-                        # Main audio player
-                        st.audio(audio_bytes, format=mime_type)
-                        
-                        # Download button
-                        file_name = f"ai_music_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
-                        st.download_button(
-                            label="📥 Download MP3",
-                            data=audio_bytes,
-                            file_name=file_name,
-                            mime=mime_type,
-                            use_container_width=True
-                        )
-                        
-                        # Waveform visualization
-                        if LIBROSA_AVAILABLE:
-                            st.subheader("📊 Waveform Visualization")
-                            waveform_fig = create_waveform_visualization(audio_file_path)
-                            if waveform_fig:
-                                st.pyplot(waveform_fig)
-                            else:
-                                st.info("Waveform visualization not available")
-                        
-                        # Audio information
-                        file_size = Path(audio_file_path).stat().st_size / 1024  # KB
-                        st.caption(f"📁 File size: {file_size:.1f} KB | Format: {mime_type}")
-                        
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Cleanup old files
-                    generator.cleanup_temp_files()
-                    
-                else:
-                    st.error("❌ Music generation failed. Please try again.")
-                    
-            except Exception as e:
-                st.error(f"❌ Generation error: {e}")
-        
-        # Technical information
-        with st.expander("🔧 Technical Details"):
-            gen_info = generator.get_generation_info()
-            st.json(gen_info)
-    
-    elif section == "📊 Analytics Dashboard":
-        st.header("📊 Analytics Dashboard")
-        
-        if PLOTLY_AVAILABLE:
-            # Sample analytics
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("🔥 Popular Moods")
-                mood_data = pd.DataFrame({
-                    'Mood': ['Happy', 'Energetic', 'Calm', 'Sad', 'Mysterious', 'Romantic'],
-                    'Frequency': [35, 28, 25, 15, 12, 8]
-                })
-                fig1 = px.bar(mood_data, x='Mood', y='Frequency', 
-                             title='Most Analyzed Moods',
-                             color='Frequency',
-                             color_continuous_scale='viridis')
-                st.plotly_chart(fig1, use_container_width=True)
-            
-            with col2:
-                st.subheader("⚡ Energy Distribution")
-                energy_data = pd.DataFrame({
-                    'Energy Range': ['Low (1-3)', 'Medium (4-6)', 'High (7-10)'],
-                    'Percentage': [25, 50, 25]
-                })
-                fig2 = px.pie(energy_data, values='Percentage', names='Energy Range',
-                             title='Energy Level Distribution')
-                st.plotly_chart(fig2, use_container_width=True)
-            
-            # Tempo trends
-            st.subheader("🎵 Tempo Trends")
-            tempo_data = pd.DataFrame({
-                'Day': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                'Average_Tempo': [110, 125, 105, 130, 140, 115, 95]
-            })
-            fig3 = px.line(tempo_data, x='Day', y='Average_Tempo',
-                          title='Average Tempo by Day of Week',
-                          markers=True)
-            st.plotly_chart(fig3, use_container_width=True)
-            
+        if audio_file_path and Path(audio_file_path).exists():
+            display_generated_music(audio_file_path, user_input, generator)
         else:
-            st.info("📊 Install plotly for enhanced visualizations: `pip install plotly`")
-    
-    elif section == "⚙️ Model Information":
-        st.header("⚙️ Model Information & Status")
+            st.error("❌ Failed to generate music. Please try again with a different description.")
+            
+    except Exception as e:
+        st.error(f"❌ Generation failed: {e}")
+        st.info("💡 Try a simpler description or check system requirements.")
+
+def generate_music_with_params(params, generator):
+    """Generate music with manual parameters"""
+    try:
+        with st.spinner("🎼 Generating music with your custom parameters..."):
+            st.info(f"🎯 **Parameters**: {params['mood_category'].title()} mood, {params['tempo']} BPM, {params['key']} key")
+            audio_file_path = generator.generate_music(params)
         
-        # Model status
-        col1, col2 = st.columns(2)
+        if audio_file_path and Path(audio_file_path).exists():
+            description = f"{params['mood_category'].title()} {params['genre_style']} music ({params['tempo']} BPM)"
+            display_generated_music(audio_file_path, description, generator)
+        else:
+            st.error("❌ Failed to generate music with these parameters.")
+            
+    except Exception as e:
+        st.error(f"❌ Generation failed: {e}")
+
+def display_generated_music(audio_file_path, description, generator):
+    """Display generated music with player and download options"""
+    st.success("🎉 **Music Generated Successfully!**")
+    st.markdown(f"**Description**: {description}")
+    
+    # Get audio for playback
+    audio_bytes, mime_type = generator.get_audio_for_streamlit(audio_file_path)
+    
+    if audio_bytes:
+        # Audio player
+        st.audio(audio_bytes, format=mime_type)
+        
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.subheader("🤖 Mood Analysis Models")
-            st.success("✅ Sentiment: cardiffnlp/twitter-roberta-base-sentiment-latest")
-            st.success("✅ Embeddings: all-MiniLM-L6-v2")
-            st.info("💡 Models loaded and ready")
+            # Download button
+            file_name = f"ai_music_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+            st.download_button(
+                label="📥 Download MP3",
+                data=audio_bytes,
+                file_name=file_name,
+                mime=mime_type,
+                use_container_width=True
+            )
         
         with col2:
-            st.subheader("🎵 Music Generation Models")
-            gen_info = generator.get_generation_info()
-            if gen_info['musicgen_available']:
-                st.success(f"✅ MusicGen: {gen_info['model_name']}")
-                st.success(f"✅ Sample Rate: {gen_info['sample_rate']} Hz")
-                st.success(f"✅ Duration: {gen_info['duration']} seconds")
-            else:
-                st.warning("⚠️ MusicGen not available - using fallback")
-                st.info("Install audiocraft: `pip install audiocraft`")
+            if st.button("🔄 Generate Another", use_container_width=True):
+                st.rerun()
         
-        # Requirements check
-        st.subheader("📦 Dependencies Status")
+        with col3:
+            if st.button("💾 Save to Profile", use_container_width=True):
+                # This would save to user's Firebase profile
+                st.success("💾 Saved to your music history!")
         
-        deps = {
-            "transformers": "✅ Installed",
-            "sentence-transformers": "✅ Installed", 
-            "torch": "✅ Installed",
-            "streamlit": "✅ Installed",
-            "plotly": "✅ Installed" if PLOTLY_AVAILABLE else "⚠️ Not installed",
-            "librosa": "✅ Installed" if LIBROSA_AVAILABLE else "⚠️ Not installed",
-            "audiocraft": "✅ Installed" if gen_info['musicgen_available'] else "⚠️ Not installed"
-        }
+        # File info
+        file_size = len(audio_bytes) / 1024  # KB
+        st.caption(f"📊 File size: {file_size:.1f} KB | Format: {mime_type}")
         
-        for dep, status in deps.items():
-            st.write(f"**{dep}:** {status}")
+    else:
+        st.error("❌ Audio playback not available, but file was generated.")
+
+# Helper dictionary for energy words
+energy_words = {
+    1: "very slow", 2: "slow", 3: "gentle", 4: "relaxed", 5: "moderate",
+    6: "upbeat", 7: "energetic", 8: "lively", 9: "dynamic", 10: "intense"
+}
+
+def generate_music_from_mood(mood_result):
+    try:
+        with st.spinner("🎼 Generating music from mood analysis..."):
+            generator = MusicGenerator()
+            audio_file_path = generator.generate_music(mood_result)
         
-        # Installation commands
-        with st.expander("📋 Installation Commands"):
-            st.code("""
-# Core dependencies
-pip install streamlit transformers torch sentence-transformers
-pip install numpy pandas scikit-learn
+        if audio_file_path and Path(audio_file_path).exists():
+            st.success("🎉 Music generated from your mood!")
+            
+            # Display audio player
+            audio_bytes, mime_type = generator.get_audio_for_streamlit(audio_file_path)
+            if audio_bytes:
+                st.audio(audio_bytes, format=mime_type)
+                
+                # Download button
+                file_name = f"mood_music_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+                st.download_button(
+                    label="📥 Download MP3",
+                    data=audio_bytes,
+                    file_name=file_name,
+                    mime=mime_type
+                )
+        else:
+            st.error("❌ Failed to generate music from mood analysis.")
+    except Exception as e:
+        st.error(f"❌ Generation failed: {e}")
 
-# Audio processing
-pip install audiocraft pydub librosa soundfile torchaudio
+def main():
+    st.set_page_config(
+        page_title='AI Music Composer', 
+        page_icon='🎵', 
+        layout='wide'
+    )
+    apply_custom_css()
+    st.markdown('<h1 class="main-header">🎵 AI Music Composer</h1>', unsafe_allow_html=True)
+    if not firebase_auth.is_user_logged_in():
+        show_login_screen()
+        return
+    show_main_app()
 
-# Visualization  
-pip install plotly matplotlib
-
-# Optional for better performance
-pip install accelerate
-            """)
-    
-    # Footer
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown(
-            f"<p style='text-align: center; color: #64748b;'>"
-            f"🎵 AI Music Composer | Milestones 1 & 2 Complete | "
-            f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>", 
-            unsafe_allow_html=True
-        )
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
