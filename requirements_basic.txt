@@ -1,0 +1,15 @@
+# Essential requirements for basic functionality
+streamlit>=1.18
+transformers>=4.30.0
+torch>=1.13
+numpy
+pandas
+sentence-transformers
+scikit-learn
+
+# Optional requirements for enhanced features
+# Uncomment the following lines if you want audio generation and visualizations:
+# soundfile
+# scipy
+# librosa
+# plotly

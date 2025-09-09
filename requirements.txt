@@ -1,0 +1,32 @@
+# Streamlit Framework
+streamlit>=1.28.0
+
+# Hugging Face Models - Core Dependencies
+transformers>=4.35.0
+torch>=2.1.0
+sentence-transformers>=2.2.2
+
+# Audio Processing & Music Generation
+audiocraft>=1.0.0
+pydub>=0.25.1
+librosa>=0.10.0
+soundfile>=0.12.1
+
+# Data Processing
+numpy>=1.25.0
+pandas>=2.1.0
+scikit-learn>=1.3.0
+
+# Visualization
+plotly>=5.15.0
+matplotlib>=3.7.0
+
+# Additional Audio Support
+scipy>=1.11.0
+torchaudio>=2.1.0
+
+# File Management
+pathlib
+
+# Optional for better performance
+accelerate>=0.20.0
